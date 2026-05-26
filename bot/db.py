@@ -22,20 +22,21 @@ async def init_db():
             )
         """)
         await db.execute("""
-            INSERT OR IGNORE INTO schema_version (version) VALUES (0)
-        """)
-        await db.execute("""
             CREATE TABLE IF NOT EXISTS subscribers (
                 chat_id INTEGER PRIMARY KEY,
                 username TEXT DEFAULT NULL,
                 joined_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             )
         """)
-        await db.commit()
 
         cursor = await db.execute("SELECT version FROM schema_version")
         row = await cursor.fetchone()
-        current_version = row[0] if row else 0
+        if row is None:
+            await db.execute("INSERT INTO schema_version (version) VALUES (0)")
+            await db.commit()
+            current_version = 0
+        else:
+            current_version = row[0]
 
         if current_version < CURRENT_SCHEMA_VERSION:
             await _run_migrations(db, current_version)
