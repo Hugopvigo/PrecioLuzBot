@@ -1,0 +1,8 @@
+services:
+  precioluz:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    stop_grace_period: 30s
