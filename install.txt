@@ -1,0 +1,101 @@
+================================================================================
+  PrecioLuz Bot — Guía de instalación en VPS
+================================================================================
+
+Requisitos previos en el VPS
+─────────────────────────────
+
+1. Docker + Docker Compose
+   Si no están instalados:
+
+     curl -fsSL https://get.docker.com | sh
+     sudo usermod -aG docker $USER
+     # Cerrar sesión y volver a entrar para que el grupo surta efecto
+
+   Verificar:
+     docker --version
+     docker compose version
+
+2. Git (suele venir con la imagen del VPS)
+     apt install -y git
+
+3. Dos tokens (obtener antes de instalar):
+   - TELEGRAM_BOT_TOKEN  → crear bot con @BotFather en Telegram
+   - ESIOS_API_TOKEN     → solicitar en api_token@ree.es
+
+
+Instalación
+───────────
+
+1. Clonar el repositorio
+     git clone https://github.com/tu-usuario/PrecioLuz.git
+     cd PrecioLuz
+
+2. Crear el fichero .env a partir de la plantilla
+     cp .env.example .env
+
+3. Editar .env con los tokens reales
+     nano .env
+
+   Contenido esperado:
+     TELEGRAM_BOT_TOKEN=1234567890:ABC...
+     ESIOS_API_TOKEN=abc123def456...
+     TZ=Europe/Madrid
+     NOTIFY_HOUR=20
+     NOTIFY_MINUTE=15
+     LOG_LEVEL=INFO
+
+4. Crear el directorio de datos
+     mkdir -p data
+
+5. Construir y arrancar
+     docker compose up -d
+
+6. Verificar que funciona
+     docker compose logs -f precioluz
+
+   Debes ver: "PrecioLuz Bot running"
+
+
+Comandos útiles
+───────────────
+
+  Ver logs en vivo            → docker compose logs -f precioluz
+  Ver logs de hoy             → docker compose logs --since today precioluz
+  Reiniciar                   → docker compose restart
+  Parar                       → docker compose down
+  Actualizar (tras git pull)  → docker compose up -d --build
+  Entrar al contenedor        → docker compose exec precioluz sh
+
+
+Actualización
+─────────────
+
+  cd PrecioLuz
+  git pull
+  docker compose up -d --build
+
+
+Backup de la base de datos
+──────────────────────────
+
+  cp data/subscribers.db data/subscribers.db.bak
+
+
+Restaurar
+─────────
+
+  docker compose down
+  cp data/subscribers.db.bak data/subscribers.db
+  docker compose up -d
+
+
+Troubleshooting
+───────────────
+
+  - "TELEGRAM_BOT_TOKEN not set"    → el .env no existe o falta el token
+  - "ESIOS_API_TOKEN not set"       → igual, revisa el .env
+  - El bot no envía notificaciones  → comprueba los logs: docker compose logs --since 1h precioluz
+  - Error 401 en ESIOS              → token ESIOS incorrecto o expirado
+  - Error "bot bloqueado"           → el usuario bloqueó el bot; se elimina automáticamente
+  - Container en restart loop       → docker compose logs precioluz para ver el error crítico
