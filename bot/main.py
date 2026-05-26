@@ -4,6 +4,7 @@ import os
 import signal
 import sys
 
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import ApplicationBuilder
 from telegram.request import HTTPXRequest
 
@@ -46,7 +47,17 @@ async def main():
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _signal_handler)
 
-    await app.initialize()
+    for attempt in range(1, 6):
+        try:
+            await app.initialize()
+            break
+        except (NetworkError, TimedOut) as e:
+            wait = attempt * 5
+            logger.warning("Telegram unreachable (attempt %d/5): %s — retry in %ds", attempt, e, wait)
+            if attempt == 5:
+                raise
+            await asyncio.sleep(wait)
+
     await app.start()
     await app.updater.start_polling()
 
