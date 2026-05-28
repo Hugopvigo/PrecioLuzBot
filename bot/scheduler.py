@@ -39,16 +39,7 @@ async def _notify_job(app):
         return
 
     if not prices:
-        logger.warning("No prices available yet for %s", target_date)
-        try:
-            subscribers = await get_all_subscribers()
-            for chat_id, _ in subscribers:
-                await app.bot.send_message(
-                    chat_id=chat_id,
-                    text="Los precios de mañana aún no están publicados, probaré de nuevo en unos minutos.",
-                )
-        except Exception:
-            logger.exception("Failed to send no-prices notice")
+        logger.warning("No prices available yet for %s, scheduling silent retry", target_date)
         _schedule_retry(app, minutes=30)
         return
 
@@ -89,7 +80,7 @@ def setup_scheduler(app) -> AsyncIOScheduler:
     global _scheduler_instance
 
     hour = int(os.getenv("NOTIFY_HOUR", "20"))
-    minute = int(os.getenv("NOTIFY_MINUTE", "15"))
+    minute = int(os.getenv("NOTIFY_MINUTE", "30"))
 
     scheduler = AsyncIOScheduler(timezone=MADRID_TZ)
     scheduler.add_job(
