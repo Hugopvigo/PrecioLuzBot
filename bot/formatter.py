@@ -1,4 +1,3 @@
-import locale
 from datetime import datetime
 
 from pytz import timezone
@@ -16,6 +15,18 @@ MONTH_NAMES = {
     9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
 }
 
+_TRAMO_FILL = {
+    "cheap":  "🟩",
+    "medium": "🟨",
+    "dear":   "🟥",
+}
+
+_TRAMO_ICON = {
+    "cheap":  "🟢",
+    "medium": "🟡",
+    "dear":   "🔴",
+}
+
 
 def format_message(prices: list[dict], date_str: str) -> str:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -23,30 +34,23 @@ def format_message(prices: list[dict], date_str: str) -> str:
     month_name = MONTH_NAMES[dt.month]
 
     sorted_prices = sorted(prices, key=lambda p: p["price_kwh"])
-    cheapest = sorted_prices[:3]
-    dearest = sorted_prices[-3:]
-
-    cheapest_set = {p["hour"] for p in cheapest}
-    dearest_set = {p["hour"] for p in dearest}
+    cheapest_set = {p["hour"] for p in sorted_prices[:3]}
+    dearest_set = {p["hour"] for p in sorted_prices[-3:]}
 
     avg_price = sum(p["price_kwh"] for p in prices) / len(prices)
-    max_price = max(p["price_kwh"] for p in prices)
 
     n = len(prices)
-    sorted_by_price = sorted(prices, key=lambda p: p["price_kwh"])
-    cheap_threshold = sorted_by_price[n // 3]["price_kwh"]
-    expensive_threshold = sorted_by_price[2 * n // 3]["price_kwh"]
+    cheap_threshold = sorted_prices[n // 3]["price_kwh"]
+    expensive_threshold = sorted_prices[2 * n // 3]["price_kwh"]
 
-    min_price = min(p["price_kwh"] for p in prices)
-    max_p = max(p["price_kwh"] for p in prices)
-    abs_min = min_price
+    min_price = sorted_prices[0]["price_kwh"]
+    max_price = sorted_prices[-1]["price_kwh"]
+    cheapest_hour = sorted_prices[0]
+    dearest_hour = sorted_prices[-1]
 
     lines = []
     lines.append(f"⚡ Precio de la luz — {day_name} {dt.day} {month_name}")
     lines.append("")
-
-    cheapest_hour = sorted_prices[0]
-    dearest_hour = sorted_prices[-1]
     lines.append(f"🟢 Más barata: {cheapest_hour['hour']:02d}:00h → {format_price(cheapest_hour['price_kwh'])} €/kWh")
     lines.append(f"🔴 Más cara: {dearest_hour['hour']:02d}:00h → {format_price(dearest_hour['price_kwh'])} €/kWh")
     lines.append(f"📊 Media del día: {format_price(avg_price)} €/kWh")
@@ -57,29 +61,27 @@ def format_message(prices: list[dict], date_str: str) -> str:
         hour = p["hour"]
         price = p["price_kwh"]
 
-        if hour in cheapest_set:
-            icon = "🟢💰"
-        elif price <= cheap_threshold:
-            icon = "🟢  "
+        if price <= cheap_threshold:
+            tramo = "cheap"
         elif price <= expensive_threshold:
-            icon = "🟡  "
-        elif hour in dearest_set:
-            icon = "🔴💀"
+            tramo = "medium"
         else:
-            icon = "🔴  "
+            tramo = "dear"
 
-        bar = _build_bar(price, max_p, abs_min, max_len=12)
+        color_icon = _TRAMO_ICON[tramo]
+        bar = _build_bar(price, max_price, min_price, _TRAMO_FILL[tramo])
 
-        annotation = ""
-        if hour == cheapest_hour["hour"]:
-            annotation = " ← más barata"
-        elif hour == dearest_hour["hour"]:
-            annotation = " ← más cara"
+        if hour in cheapest_set:
+            special = " 💰"
+        elif hour in dearest_set:
+            special = " 💀"
+        else:
+            special = ""
 
-        lines.append(f"{icon} {hour:02d}h {format_price(price)} {bar}{annotation}")
+        lines.append(f"{color_icon} {hour:02d}h {format_price(price)}€ {bar}{special}")
 
     lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append("Datos: REE ESIOS · /ayuda")
+    lines.append("Datos: REE ESIOS · /ayuda · by HPVF")
 
     return "\n".join(lines)
 
@@ -88,12 +90,10 @@ def format_price(price: float) -> str:
     return f"{price:.4f}".replace(".", ",")
 
 
-def _build_bar(price: float, max_price: float, min_price: float, max_len: int = 12) -> str:
+def _build_bar(price: float, max_price: float, min_price: float, fill_emoji: str, max_len: int = 6) -> str:
     if max_price == min_price:
-        return "░" * max_len
+        return "⬜" * max_len
 
     ratio = (price - min_price) / (max_price - min_price)
-    filled = round(ratio * max_len)
-    filled = max(1, min(filled, max_len))
-
-    return "█" * filled + "░" * (max_len - filled)
+    filled = max(1, min(round(ratio * max_len), max_len))
+    return fill_emoji * filled + "⬜" * (max_len - filled)
