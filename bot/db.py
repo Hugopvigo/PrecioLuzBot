@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 
@@ -62,9 +61,12 @@ async def _migration_1(db: aiosqlite.Connection):
 async def _migration_2(db: aiosqlite.Connection):
     await db.execute("""
         CREATE TABLE IF NOT EXISTS prices (
-            date TEXT PRIMARY KEY,
-            data TEXT NOT NULL,
-            saved_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            date TEXT NOT NULL,
+            hour INTEGER NOT NULL,
+            price_kwh REAL NOT NULL,
+            price_mwh REAL NOT NULL,
+            fetched_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            PRIMARY KEY (date, hour)
         )
     """)
 
@@ -99,16 +101,21 @@ async def is_subscribed(chat_id: int) -> bool:
 
 async def get_prices(date: str) -> list[dict] | None:
     async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("SELECT data FROM prices WHERE date = ?", (date,))
-        row = await cursor.fetchone()
-        return json.loads(row[0]) if row else None
+        cursor = await db.execute(
+            "SELECT hour, price_kwh, price_mwh FROM prices WHERE date = ? ORDER BY hour",
+            (date,),
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return None
+        return [{"hour": r[0], "price_kwh": r[1], "price_mwh": r[2]} for r in rows]
 
 
 async def save_prices(date: str, prices: list[dict]):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO prices (date, data) VALUES (?, ?)",
-            (date, json.dumps(prices)),
+        await db.executemany(
+            "INSERT OR REPLACE INTO prices (date, hour, price_kwh, price_mwh) VALUES (?, ?, ?, ?)",
+            [(date, p["hour"], p["price_kwh"], p["price_mwh"]) for p in prices],
         )
         await db.commit()
 
