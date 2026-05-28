@@ -1,37 +1,57 @@
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
 
 import aiohttp
+from pytz import timezone as pytz_timezone
 
 from bot.cache import get_cached, set_cached
+from bot.db import get_prices, save_prices
 
 logger = logging.getLogger("bot.esios")
 
 ESIOS_BASE_URL = "https://api.esios.ree.es/indicators/1001"
+MADRID_TZ = pytz_timezone("Europe/Madrid")
 MAX_RETRIES = 3
-RETRY_DELAY = 300
+RETRY_DELAY = 5
 
 
 async def fetch_pvpc_prices(date: str) -> list[dict] | None:
     cache_key = f"precios:{date}"
+
+    # 1. Caché en memoria (evita DB para consultas repetidas en la misma sesión)
     cached = get_cached(cache_key)
     if cached is not None:
-        logger.debug("Cache hit for %s", cache_key)
+        logger.debug("Cache hit (memory) for %s", cache_key)
         return cached
+
+    # 2. Base de datos local (cumplimiento REE: una sola llamada por día)
+    stored = await get_prices(date)
+    if stored:
+        logger.debug("Cache hit (db) for %s", cache_key)
+        set_cached(cache_key, stored)
+        return stored
 
     token = os.getenv("ESIOS_API_TOKEN")
     if not token:
         logger.critical("ESIOS_API_TOKEN not set")
         return None
 
+    # Construir fechas con offset Madrid para que la API devuelva
+    # exactamente las 24 horas del día local (00:00-23:59 hora española)
+    local_start = MADRID_TZ.localize(
+        datetime.strptime(date, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+    )
+    local_end = local_start.replace(hour=23, minute=59, second=59)
+
     headers = {
-        "Authorization": f"Token token={token}",
+        "x-api-key": token,
         "Accept": "application/json",
     }
     params = {
-        "start_date": f"{date}T00:00:00",
-        "end_date": f"{date}T23:59:59",
+        "start_date": local_start.isoformat(),
+        "end_date": local_end.isoformat(),
         "time_trunc": "hour",
     }
 
@@ -44,13 +64,13 @@ async def fetch_pvpc_prices(date: str) -> list[dict] | None:
                         prices = _parse_esios_response(data)
                         if prices:
                             set_cached(cache_key, prices)
+                            await save_prices(date, prices)
                         return prices
                     logger.warning("ESIOS returned status %d (attempt %d/%d)", resp.status, attempt, MAX_RETRIES)
         except Exception:
             logger.exception("Error fetching ESIOS (attempt %d/%d)", attempt, MAX_RETRIES)
 
         if attempt < MAX_RETRIES:
-            import asyncio
             await asyncio.sleep(RETRY_DELAY)
 
     logger.error("All retries exhausted for date %s", date)
@@ -69,9 +89,16 @@ def _parse_esios_response(data: dict) -> list[dict]:
         try:
             price_mwh = v["value"]
             price_kwh = round(price_mwh / 1000, 4)
-            dt = datetime.fromisoformat(v["datetime"]).astimezone(timezone.utc)
-            hour = v.get("time_interval", {}).get("start", "")
-            hour_num = int(hour[11:13]) if len(hour) >= 13 else dt.hour
+
+            # Convertir a hora local Madrid para mostrar la hora correcta
+            hour_str = v.get("time_interval", {}).get("start", "")
+            if hour_str:
+                dt_local = datetime.fromisoformat(hour_str).astimezone(MADRID_TZ)
+                hour_num = dt_local.hour
+            else:
+                dt_local = datetime.fromisoformat(v["datetime"]).astimezone(MADRID_TZ)
+                hour_num = dt_local.hour
+
             prices.append({
                 "hour": hour_num,
                 "price_kwh": price_kwh,
