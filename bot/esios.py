@@ -87,6 +87,10 @@ def _parse_esios_response(data: dict) -> list[dict]:
     prices = []
     for v in values:
         try:
+            # geo_id 3 = Peninsular España; ignorar Canarias, Baleares, Ceuta, Melilla
+            if v.get("geo_id") != 3:
+                continue
+
             price_mwh = v["value"]
             price_kwh = round(price_mwh / 1000, 4)
 
