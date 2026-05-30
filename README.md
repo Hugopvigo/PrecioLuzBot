@@ -78,8 +78,8 @@ Los precios se obtienen de la [API oficial ESIOS de Red Eléctrica](https://api.
 
 <div align="center">
 
-Hecho con ❤️ y ⚡ para ahorrar dinero y energía por Hugo Perez-Vigo
+Hecho con ❤️ y ⚡ para ahorrar dinero y energía por **[Hugo Perez-Vigo](https://hugopvigo.es/)** · [@hugopvigo](http://twitter.com/hugopvigo)
 
-[🔗 GitHub](https://github.com/Hugopvigo/PrecioLuz)
+**[⬆ Volver arriba](#-precioluzapp)**
 
 </div>
