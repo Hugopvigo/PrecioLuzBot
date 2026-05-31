@@ -76,10 +76,12 @@ Los precios se obtienen de la [API oficial ESIOS de Red Eléctrica](https://api.
 
 ---
 
+---
+
 <div align="center">
 
-Hecho con ❤️ y ⚡ para ahorrar dinero y energía por **[Hugo Perez-Vigo](https://hugopvigo.es/)** · [@hugopvigo](http://twitter.com/hugopvigo)
+**Desarrollado por [Hugo Perez-Vigo](https://hugopvigo.es)** · [@hugopvigo](https://x.com/hugopvigo)
 
-**[⬆ Volver arriba](#-precioluz-bot)**
+[![GitHub](https://img.shields.io/badge/GitHub-Hugopvigo-181717?style=for-the-badge&logo=github)](https://github.com/Hugopvigo)
 
 </div>
