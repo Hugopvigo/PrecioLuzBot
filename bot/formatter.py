@@ -1,3 +1,9 @@
+"""Rich Markdown formatter for Telegram Bot API 10.1.
+
+Generates Markdown content for sendRichMessage with tables, headings,
+expandable details, and structured layouts.
+"""
+
 from datetime import datetime
 
 from pytz import timezone
@@ -15,50 +21,59 @@ MONTH_NAMES = {
     9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
 }
 
-_TRAMO_FILL = {
-    "cheap":      "🟩",
-    "affordable": "🟨",
-    "medium":     "🟧",
-    "dear":       "🟥",
-}
-
-_TRAMO_ICON = {
-    "cheap":      "🟢",
+_TRAMO_EMOJI = {
+    "cheap": "🟢",
     "affordable": "🟡",
-    "medium":     "🟠",
-    "dear":       "🔴",
+    "medium": "🟠",
+    "dear": "🔴",
 }
 
 
-def format_message(prices: list[dict], date_str: str) -> str:
+def format_rich_message(prices: list[dict], date_str: str) -> str:
+    """Build a full rich markdown message with prices."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     day_name = DAY_NAMES[dt.weekday()]
     month_name = MONTH_NAMES[dt.month]
 
-    sorted_prices = sorted(prices, key=lambda p: p["price_kwh"])
-    cheapest_set = {p["hour"] for p in sorted_prices[:3]}
-    dearest_set = {p["hour"] for p in sorted_prices[-3:]}
+    sorted_by_price = sorted(prices, key=lambda p: p["price_kwh"])
+    cheapest_set = {p["hour"] for p in sorted_by_price[:3]}
+    dearest_set = {p["hour"] for p in sorted_by_price[-3:]}
 
     avg_price = sum(p["price_kwh"] for p in prices) / len(prices)
 
     n = len(prices)
-    t1 = sorted_prices[n // 4]["price_kwh"]      # 25% — barato
-    t2 = sorted_prices[n // 2]["price_kwh"]       # 50% — asequible
-    t3 = sorted_prices[3 * n // 4]["price_kwh"]   # 75% — medio
+    t1 = sorted_by_price[n // 4]["price_kwh"]
+    t2 = sorted_by_price[n // 2]["price_kwh"]
+    t3 = sorted_by_price[3 * n // 4]["price_kwh"]
 
-    min_price = sorted_prices[0]["price_kwh"]
-    max_price = sorted_prices[-1]["price_kwh"]
-    cheapest_hour = sorted_prices[0]
-    dearest_hour = sorted_prices[-1]
+    min_price = sorted_by_price[0]["price_kwh"]
+    max_price = sorted_by_price[-1]["price_kwh"]
+    cheapest = sorted_by_price[0]
+    dearest = sorted_by_price[-1]
 
     lines = []
-    lines.append(f"⚡ Precio de la luz — {day_name} {dt.day} {month_name}")
+
+    # ── Header ──
+    lines.append(f"## ⚡ Precio de la luz — {day_name} {dt.day} {month_name}")
     lines.append("")
-    lines.append(f"🟢 Más barata: {cheapest_hour['hour']:02d}:00h → {format_price(cheapest_hour['price_kwh'])} €/kWh")
-    lines.append(f"🔴 Más cara: {dearest_hour['hour']:02d}:00h → {format_price(dearest_hour['price_kwh'])} €/kWh")
-    lines.append(f"📊 Media del día: {format_price(avg_price)} €/kWh")
+
+    # ── Resumen ──
+    lines.append("### 📊 Resumen del día")
     lines.append("")
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"- **Más barata:** `{cheapest['hour']:02d}:00h` → **`{_fmt(cheapest['price_kwh'])} €/kWh`** 🟢💰")
+    lines.append(f"- **Más cara:** `{dearest['hour']:02d}:00h` → **`{_fmt(dearest['price_kwh'])} €/kWh`** 🔴💀")
+    lines.append(f"- **Media del día:** **`{_fmt(avg_price)} €/kWh`**")
+    lines.append("")
+
+    # ── Divider ──
+    lines.append("---")
+    lines.append("")
+
+    # ── Tabla horaria ──
+    lines.append("### 🕐 Desglose horario")
+    lines.append("")
+    lines.append("| Hora | Precio (€/kWh) | Nivel | |")
+    lines.append("|:-----|---------------:|:------|:---|")
 
     for p in sorted(prices, key=lambda x: x["hour"]):
         hour = p["hour"]
@@ -73,32 +88,248 @@ def format_message(prices: list[dict], date_str: str) -> str:
         else:
             tramo = "dear"
 
-        color_icon = _TRAMO_ICON[tramo]
-        bar = _build_bar(price, max_price, min_price, _TRAMO_FILL[tramo])
+        emoji = _TRAMO_EMOJI[tramo]
 
         if hour in cheapest_set:
-            special = " 💰"
+            marker = " 💰"
         elif hour in dearest_set:
-            special = " 💀"
+            marker = " 💀"
         else:
-            special = ""
+            marker = ""
 
-        lines.append(f"{color_icon} {hour:02d}h {format_price(price)}€ {bar}{special}")
+        lines.append(f"| **{hour:02d}** | `{_fmt(price)}` | {emoji} |{marker}|")
 
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append("Datos: REE ESIOS · /ayuda · by HPVF")
+    lines.append("")
+
+    # ── Divider ──
+    lines.append("---")
+    lines.append("")
+
+    # ── Top 3 baratas (details expandible) ──
+    cheapest_3 = sorted_by_price[:3]
+    lines.append("<details>")
+    lines.append("<summary>💰 Top 3 horas más baratas</summary>")
+    lines.append("")
+    for i, p in enumerate(cheapest_3, 1):
+        bar = _build_bar_visual(p["price_kwh"], max_price, min_price)
+        lines.append(f"{i}. `{p['hour']:02d}:00h` → **`{_fmt(p['price_kwh'])} €/kWh`** {bar}")
+    lines.append("")
+    lines.append("</details>")
+    lines.append("")
+
+    # ── Top 3 caras (details expandible) ──
+    dearest_3 = sorted_by_price[-3:]
+    lines.append("<details>")
+    lines.append("<summary>💀 Top 3 horas más caras</summary>")
+    lines.append("")
+    for i, p in enumerate(dearest_3, 1):
+        bar = _build_bar_visual(p["price_kwh"], max_price, min_price)
+        lines.append(f"{i}. `{p['hour']:02d}:00h` → **`{_fmt(p['price_kwh'])} €/kWh`** {bar}")
+    lines.append("")
+    lines.append("</details>")
+    lines.append("")
+
+    # ── Footer ──
+    lines.append("---")
+    lines.append("<footer>Datos: REE ESIOS · /ayuda · /grafico · by HPVF</footer>")
 
     return "\n".join(lines)
 
 
-def format_price(price: float) -> str:
+def format_rich_grafico(prices: list[dict], date_str: str) -> str:
+    """Build a ranking/chart view sorted by price, cheapest first."""
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    day_name = DAY_NAMES[dt.weekday()]
+    month_name = MONTH_NAMES[dt.month]
+
+    sorted_by_price = sorted(prices, key=lambda p: p["price_kwh"])
+    min_price = sorted_by_price[0]["price_kwh"]
+    max_price = sorted_by_price[-1]["price_kwh"]
+
+    avg_price = sum(p["price_kwh"] for p in prices) / len(prices)
+
+    lines = []
+
+    lines.append(f"## 📈 Gráfico de precios — {day_name} {dt.day} {month_name}")
+    lines.append("")
+    lines.append(f"> **Media del día:** `{_fmt(avg_price)} €/kWh` · Rango: `{_fmt(min_price)}` → `{_fmt(max_price)} €/kWh`")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # ── Tabla ordenada ──
+    lines.append("### De más barata a más cara")
+    lines.append("")
+    lines.append("| # | Hora | Precio | Distribución |")
+    lines.append("|--:|:-----|-------:|:-------------|")
+
+    for rank, p in enumerate(sorted_by_price, 1):
+        bar = _build_bar_visual(p["price_kwh"], max_price, min_price)
+
+        if rank <= 3:
+            marker = " 💰"
+        elif rank >= len(sorted_by_price) - 2:
+            marker = " 💀"
+        else:
+            marker = ""
+
+        lines.append(f"| {rank} | **{p['hour']:02d}h** | `{_fmt(p['price_kwh'])}` | {bar}{marker} |")
+
+    lines.append("")
+
+    # ── Distribución por tramos ──
+    n = len(prices)
+    t1 = sorted_by_price[n // 4]["price_kwh"]
+    t2 = sorted_by_price[n // 2]["price_kwh"]
+    t3 = sorted_by_price[3 * n // 4]["price_kwh"]
+
+    cheap_count = sum(1 for p in prices if p["price_kwh"] <= t1)
+    affordable_count = sum(1 for p in prices if t1 < p["price_kwh"] <= t2)
+    medium_count = sum(1 for p in prices if t2 < p["price_kwh"] <= t3)
+    dear_count = sum(1 for p in prices if p["price_kwh"] > t3)
+
+    lines.append("---")
+    lines.append("")
+    lines.append("### 🎯 Distribución por tramos")
+    lines.append("")
+    lines.append(f"- 🟢 **Barato** (≤ `{_fmt(t1)}`): **{cheap_count}h**")
+    lines.append(f"- 🟡 **Asequible** ({_fmt(t1)} - {_fmt(t2)}): **{affordable_count}h**")
+    lines.append(f"- 🟠 **Medio** ({_fmt(t2)} - {_fmt(t3)}): **{medium_count}h**")
+    lines.append(f"- 🔴 **Caro** (> `{_fmt(t3)}`): **{dear_count}h**")
+    lines.append("")
+
+    # ── Footer ──
+    lines.append("---")
+    lines.append("<footer>Datos: REE ESIOS · /precio · /ayuda · by HPVF</footer>")
+
+    return "\n".join(lines)
+
+
+def format_rich_start() -> str:
+    """Rich welcome message for /start."""
+    lines = [
+        "## ⚡ Bienvenido a PrecioLuz Bot",
+        "",
+        "Ahora recibirás **cada día a las 20:15h** los precios de la luz del día siguiente.",
+        "",
+        "### 📋 Comandos disponibles",
+        "",
+        "| Comando | Descripción |",
+        "|:--------|:------------|",
+        "| `/precio` | Consultar precio de hoy o mañana |",
+        "| `/grafico` | Ver gráfico de precios ordenados |",
+        "| `/ayuda` | Ver ayuda completa |",
+        "| `/stop` | Darse de baja |",
+        "",
+        "---",
+        "",
+        "<footer>Fuente: REE ESIOS · by HPVF</footer>",
+    ]
+    return "\n".join(lines)
+
+
+def format_rich_stop() -> str:
+    """Rich message for /stop."""
+    lines = [
+        "## ❌ Baja completada",
+        "",
+        "Ya **no recibirás** notificaciones diarias.",
+        "",
+        "Si cambias de opinión, usa `/start` para volver a suscribirte.",
+    ]
+    return "\n".join(lines)
+
+
+def format_rich_ayuda() -> str:
+    """Rich help message for /ayuda."""
+    lines = [
+        "## ⚡ PrecioLuz Bot — Ayuda",
+        "",
+        "### 📋 Comandos",
+        "",
+        "| Comando | Qué hace |",
+        "|:--------|:---------|",
+        "| `/start` | Suscribirse a notificaciones diarias |",
+        "| `/stop` | Darse de baja |",
+        "| `/precio` | Consultar precio de hoy (o mañana después de las 20h) |",
+        "| `/grafico` | Gráfico visual de precios ordenados |",
+        "| `/ayuda` | Mostrar esta ayuda |",
+        "",
+        "### 📊 Cómo funciona",
+        "",
+        "- Los precios se obtienen de la **API oficial ESIOS** de Red Eléctrica Española.",
+        "- Cada día a las **20:15h** recibirás los precios del día siguiente.",
+        "- Si los precios no están listos, se reintenta automáticamente.",
+        "",
+        "### 🎨 Colores",
+        "",
+        "- 🟢 **Verde**: precio barato (cuartil 1)",
+        "- 🟡 **Amarillo**: precio asequible (cuartil 2)",
+        "- 🟠 **Naranja**: precio medio (cuartil 3)",
+        "- 🔴 **Rojo**: precio caro (cuartil 4)",
+        "- 💰 Las 3 horas **más baratas** del día",
+        "- 💀 Las 3 horas **más caras** del día",
+        "",
+        "---",
+        "",
+        "<footer>by HPVF · Fuente: REE ESIOS</footer>",
+    ]
+    return "\n".join(lines)
+
+
+def format_thinking(message: str = "Analizando datos de ESIOS...") -> str:
+    """Draft message with thinking block for streaming."""
+    return f"## ⚡ Consultando precios\n\n<tg-thinking>{message}</tg-thinking>"
+
+
+def format_draft_partial(prices: list[dict], date_str: str) -> str:
+    """Partial draft: header + summary only (before full table)."""
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    day_name = DAY_NAMES[dt.weekday()]
+    month_name = MONTH_NAMES[dt.month]
+
+    sorted_by_price = sorted(prices, key=lambda p: p["price_kwh"])
+    avg_price = sum(p["price_kwh"] for p in prices) / len(prices)
+    cheapest = sorted_by_price[0]
+    dearest = sorted_by_price[-1]
+
+    lines = [
+        f"## ⚡ Precio de la luz — {day_name} {dt.day} {month_name}",
+        "",
+        "### 📊 Resumen del día",
+        "",
+        f"- **Más barata:** `{cheapest['hour']:02d}:00h` → **`{_fmt(cheapest['price_kwh'])} €/kWh`** 🟢💰",
+        f"- **Más cara:** `{dearest['hour']:02d}:00h` → **`{_fmt(dearest['price_kwh'])} €/kWh`** 🔴💀",
+        f"- **Media del día:** **`{_fmt(avg_price)} €/kWh`**",
+        "",
+        "---",
+        "",
+        "### 🕐 Desglose horario",
+        "",
+        "<tg-thinking>Cargando tabla de precios...</tg-thinking>",
+    ]
+    return "\n".join(lines)
+
+
+def _fmt(price: float) -> str:
+    """Format price with 4 decimals, comma as decimal separator."""
     return f"{price:.4f}".replace(".", ",")
 
 
-def _build_bar(price: float, max_price: float, min_price: float, fill_emoji: str, max_len: int = 6) -> str:
+def _build_bar_visual(price: float, max_price: float, min_price: float, max_len: int = 8) -> str:
+    """Build a proportional bar using block characters."""
     if max_price == min_price:
-        return "⬜" * max_len
+        return "▓" * max_len
 
     ratio = (price - min_price) / (max_price - min_price)
     filled = max(1, min(round(ratio * max_len), max_len))
-    return fill_emoji * filled + "⬜" * (max_len - filled)
+    empty = max_len - filled
+
+    if ratio <= 0.25:
+        return "█" * filled + "░" * empty
+    elif ratio <= 0.50:
+        return "█" * filled + "░" * empty
+    elif ratio <= 0.75:
+        return "█" * filled + "░" * empty
+    else:
+        return "█" * filled + "░" * empty

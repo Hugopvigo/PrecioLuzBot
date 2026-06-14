@@ -6,14 +6,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
 
 from bot.esios import fetch_pvpc_prices
-from bot.formatter import format_message
+from bot.formatter import format_rich_message
 from bot.db import get_all_subscribers
+from bot.rich import send_rich_message
 
 logger = logging.getLogger("bot.scheduler")
 
 MADRID_TZ = timezone("Europe/Madrid")
 
-# Minutos entre reintentos: intento 1→2: 60 min, intento 2→3: 30 min
 RETRY_DELAYS = {1: 60, 2: 30}
 MAX_ATTEMPTS = 3
 
@@ -39,11 +39,11 @@ async def _notify_job(app, attempt: int = 1):
         await _handle_no_prices(app, attempt)
         return
 
-    message = format_message(prices, target_date)
+    markdown = format_rich_message(prices, target_date)
     subscribers = await get_all_subscribers()
     for chat_id, _ in subscribers:
         try:
-            await app.bot.send_message(chat_id=chat_id, text=message)
+            await send_rich_message(chat_id, markdown)
         except Exception as exc:
             error_msg = str(exc).lower()
             if "blocked" in error_msg or "deactivated" in error_msg:
@@ -59,8 +59,10 @@ async def _handle_no_prices(app, attempt: int):
         logger.error("All %d attempts failed, notifying subscribers", MAX_ATTEMPTS)
         await _broadcast(
             app,
-            "😕 Esta noche REE no ha publicado los precios de mañana a tiempo.\n"
-            "Puedes consultarlos con el comando /precio mañana o en la app de tu comercializadora. ¡Hasta mañana! 👋",
+            "## ⚡ Precios no publicados\n\n"
+            "Esta noche REE no ha publicado los precios de mañana a tiempo.\n\n"
+            "Puedes consultarlos mañana con `/precio` o en la app de tu comercializadora.\n\n"
+            "¡Hasta mañana! 👋",
         )
         return
 
@@ -68,22 +70,22 @@ async def _handle_no_prices(app, attempt: int):
     next_attempt = attempt + 1
 
     if attempt == 2:
-        # Antes del último intento, avisamos
         await _broadcast(
             app,
-            "⏳ Los precios de mañana todavía no se han publicado, pero no te preocupes.\n"
-            "Haré un último intento a las 22:00h y te aviso en cuanto aparezcan. 🤞",
+            "## ⏳ Precios pendientes\n\n"
+            "Los precios de mañana todavía no se han publicado, pero no te preocupes.\n\n"
+            "Haré un **último intento** pronto y te aviso en cuanto aparezcan. 🤞",
         )
 
     _schedule_retry(app, attempt=next_attempt, minutes=delay)
     logger.info("Retry #%d scheduled in %d min", next_attempt, delay)
 
 
-async def _broadcast(app, text: str):
+async def _broadcast(app, markdown: str):
     try:
         subscribers = await get_all_subscribers()
         for chat_id, _ in subscribers:
-            await app.bot.send_message(chat_id=chat_id, text=text)
+            await send_rich_message(chat_id, markdown)
     except Exception:
         logger.exception("Failed to broadcast message")
 
@@ -94,7 +96,6 @@ def _schedule_retry(app, attempt: int, minutes: int):
         return
     run_date = datetime.now(MADRID_TZ) + timedelta(minutes=minutes)
     job_id = f"retry_notify_{attempt}"
-    # Evitar duplicados si ya existe ese job
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
     scheduler.add_job(
