@@ -6,9 +6,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
 
 from bot.esios import fetch_pvpc_prices
-from bot.formatter import format_rich_message
-from bot.db import get_all_subscribers
-from bot.rich import send_rich_message
+from bot.formatter import format_rich_message, _build_notification_keyboard
+from bot.db import get_all_subscribers, save_daily_avg
+from bot.rich import send_rich_message, send_photo
+from bot.chart import generate_price_chart
 
 logger = logging.getLogger("bot.scheduler")
 
@@ -18,6 +19,11 @@ RETRY_DELAYS = {1: 60, 2: 30}
 MAX_ATTEMPTS = 3
 
 _scheduler_instance: AsyncIOScheduler | None = None
+
+
+def _yesterday_date(date_str: str) -> str:
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 async def _notify_job(app, attempt: int = 1):
@@ -39,11 +45,21 @@ async def _notify_job(app, attempt: int = 1):
         await _handle_no_prices(app, attempt)
         return
 
-    markdown = format_rich_message(prices, target_date)
+    # ── Save daily average for trend comparison ──
+    avg_price = sum(p["price_kwh"] for p in prices) / len(prices)
+    await save_daily_avg(target_date, avg_price)
+
+    yesterday_avg = await _get_yesterday_avg(target_date)
+
+    # ── Build message and chart ──
+    markdown = format_rich_message(prices, target_date, yesterday_avg=yesterday_avg)
+    chart_buf = generate_price_chart(prices, target_date)
+    keyboard = _build_notification_keyboard()
+
     subscribers = await get_all_subscribers()
     for chat_id, _ in subscribers:
         try:
-            await send_rich_message(chat_id, markdown)
+            await send_photo(chat_id, chart_buf, caption=markdown, reply_markup=keyboard)
         except Exception as exc:
             error_msg = str(exc).lower()
             if "blocked" in error_msg or "deactivated" in error_msg:
@@ -52,6 +68,13 @@ async def _notify_job(app, attempt: int = 1):
                 await remove_subscriber(chat_id)
             else:
                 logger.exception("Failed to send to %s", chat_id)
+
+
+async def _get_yesterday_avg(date_str: str) -> float | None:
+    """Get yesterday's average price from DB."""
+    from bot.db import get_daily_avg
+    yesterday = _yesterday_date(date_str)
+    return await get_daily_avg(yesterday)
 
 
 async def _handle_no_prices(app, attempt: int):

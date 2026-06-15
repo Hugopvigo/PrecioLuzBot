@@ -7,7 +7,7 @@ logger = logging.getLogger("bot.db")
 
 DB_PATH = os.getenv("DB_PATH", "/data/subscribers.db")
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 async def _get_connection() -> aiosqlite.Connection:
@@ -71,9 +71,20 @@ async def _migration_2(db: aiosqlite.Connection):
     """)
 
 
+async def _migration_3(db: aiosqlite.Connection):
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS daily_avg (
+            date TEXT PRIMARY KEY,
+            avg_kwh REAL NOT NULL,
+            computed_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+    """)
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
+    3: _migration_3,
 }
 
 
@@ -125,3 +136,19 @@ async def get_all_subscribers() -> list[tuple[int, str | None]]:
         cursor = await db.execute("SELECT chat_id, username FROM subscribers")
         rows = await cursor.fetchall()
         return [(row[0], row[1]) for row in rows]
+
+
+async def save_daily_avg(date: str, avg_kwh: float):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO daily_avg (date, avg_kwh) VALUES (?, ?)",
+            (date, avg_kwh),
+        )
+        await db.commit()
+
+
+async def get_daily_avg(date: str) -> float | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT avg_kwh FROM daily_avg WHERE date = ?", (date,))
+        row = await cursor.fetchone()
+        return row[0] if row else None

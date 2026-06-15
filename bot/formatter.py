@@ -28,8 +28,38 @@ _TRAMO_EMOJI = {
     "dear": "🔴",
 }
 
+_SPARKLINE_CHARS = "▁▂▃▄▅▆▇█"
 
-def format_rich_message(prices: list[dict], date_str: str) -> str:
+
+def _build_sparkline(prices: list[dict]) -> str:
+    """Build a Unicode sparkline from hourly prices."""
+    vals = [p["price_kwh"] for p in prices]
+    lo, hi = min(vals), max(vals)
+    rng = hi - lo if hi != lo else 1
+    return "".join(_SPARKLINE_CHARS[min(int((v - lo) / rng * 7), 7)] for v in vals)
+
+
+def _build_notification_keyboard() -> dict:
+    """Build inline keyboard for notification messages."""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "📈 Ver gráfico", "callback_data": "cmd_grafico"},
+                {"text": "📅 Precio hoy", "callback_data": "cmd_precio_hoy"},
+            ],
+            [
+                {"text": "🔮 Precio mañana", "callback_data": "cmd_precio_manana"},
+                {"text": "❓ Ayuda", "callback_data": "cmd_ayuda"},
+            ],
+        ]
+    }
+
+
+def format_rich_message(
+    prices: list[dict],
+    date_str: str,
+    yesterday_avg: float | None = None,
+) -> str:
     """Build a full rich markdown message with prices."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     day_name = DAY_NAMES[dt.weekday()]
@@ -57,12 +87,28 @@ def format_rich_message(prices: list[dict], date_str: str) -> str:
     lines.append(f"## ⚡ Precio de la luz — {day_name} {dt.day} {month_name}")
     lines.append("")
 
+    # ── Sparkline ──
+    sparkline = _build_sparkline(prices)
+    lines.append(f"**Tendencia:** `{sparkline}`")
+    lines.append("")
+
     # ── Resumen ──
     lines.append("### 📊 Resumen del día")
     lines.append("")
     lines.append(f"- **Más barata:** `{cheapest['hour']:02d}:00h` → **`{_fmt(cheapest['price_kwh'])} €/kWh`** 🟢💰")
     lines.append(f"- **Más cara:** `{dearest['hour']:02d}:00h` → **`{_fmt(dearest['price_kwh'])} €/kWh`** 🔴💀")
-    lines.append(f"- **Media del día:** **`{_fmt(avg_price)} €/kWh`**")
+
+    trend_str = ""
+    if yesterday_avg is not None and yesterday_avg > 0:
+        diff_pct = ((avg_price - yesterday_avg) / yesterday_avg) * 100
+        if diff_pct < 0:
+            trend_str = f" (↓ {abs(diff_pct):.0f}% vs ayer)"
+        elif diff_pct > 0:
+            trend_str = f" (↑ {diff_pct:.0f}% vs ayer)"
+        else:
+            trend_str = " (igual que ayer)"
+
+    lines.append(f"- **Media del día:** **`{_fmt(avg_price)} €/kWh`**{trend_str}")
     lines.append("")
 
     # ── Divider ──
@@ -325,11 +371,4 @@ def _build_bar_visual(price: float, max_price: float, min_price: float, max_len:
     filled = max(1, min(round(ratio * max_len), max_len))
     empty = max_len - filled
 
-    if ratio <= 0.25:
-        return "█" * filled + "░" * empty
-    elif ratio <= 0.50:
-        return "█" * filled + "░" * empty
-    elif ratio <= 0.75:
-        return "█" * filled + "░" * empty
-    else:
-        return "█" * filled + "░" * empty
+    return "█" * filled + "░" * empty

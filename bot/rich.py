@@ -4,6 +4,7 @@ Sends rich formatted messages using Bot API 10.1 sendRichMessage / sendRichMessa
 Uses direct HTTP calls since python-telegram-bot may not expose these methods yet.
 """
 
+import io
 import logging
 import os
 
@@ -104,6 +105,53 @@ async def edit_rich_message(
         "rich_message": {"markdown": markdown},
     }
     return await _api_call("editMessageText", payload)
+
+
+async def send_photo(
+    chat_id: int,
+    photo: io.BytesIO,
+    caption: str = "",
+    reply_markup: dict | None = None,
+) -> dict | None:
+    """Send a photo with optional caption and inline keyboard.
+
+    Args:
+        chat_id: Target chat ID.
+        photo: PNG image as BytesIO.
+        caption: Optional text caption (Markdown).
+        reply_markup: Optional InlineKeyboardMarkup dict.
+
+    Returns:
+        The API response dict, or None on failure.
+    """
+    token = _get_token()
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN not set")
+        return None
+
+    url = API_BASE.format(token=token, method="sendPhoto")
+
+    form = aiohttp.FormData()
+    form.add_field("chat_id", str(chat_id))
+    form.add_field("photo", photo, filename="chart.png", content_type="image/png")
+    if caption:
+        form.add_field("caption", caption)
+        form.add_field("parse_mode", "Markdown")
+    if reply_markup:
+        import json
+        form.add_field("reply_markup", json.dumps(reply_markup))
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=form, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                data = await resp.json()
+                if data.get("ok"):
+                    return data
+                logger.warning("Telegram sendPhoto error: %s", data.get("description"))
+                return None
+    except Exception:
+        logger.exception("Failed calling Telegram sendPhoto")
+        return None
 
 
 async def _api_call(method: str, payload: dict) -> dict | None:

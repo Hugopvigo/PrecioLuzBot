@@ -62,6 +62,7 @@ docker compose up -d
 | `/start` | 🔔 Suscribirse a notificaciones diarias |
 | `/stop` | 🛑 Darse de baja |
 | `/precio` | 🔍 Consulta manual del precio de hoy o mañana |
+| `/grafico` | 📈 Gráfico visual de precios ordenados |
 | `/ayuda` | ❓ Muestra los comandos disponibles |
 
 > **Lógica de `/precio`:** de 00:00 a 19:59 muestra los precios de hoy; de 20:00 a 23:59 muestra los de mañana (si ya están publicados).
