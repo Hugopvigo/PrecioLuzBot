@@ -11,6 +11,7 @@ from telegram.request import HTTPXRequest
 from bot.scheduler import setup_scheduler
 from bot.db import init_db
 from bot.handlers import register_handlers
+from bot.rich import set_my_commands
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -60,6 +61,15 @@ async def main():
 
     await app.start()
     await app.updater.start_polling()
+
+    # Register bot commands menu
+    await set_my_commands([
+        {"command": "start", "description": "🔔 Suscribirse a notificaciones diarias"},
+        {"command": "stop", "description": "🛑 Darse de baja"},
+        {"command": "precio", "description": "🔍 Consultar precio de hoy o mañana"},
+        {"command": "grafico", "description": "📈 Gráfico visual de precios ordenados"},
+        {"command": "ayuda", "description": "❓ Ver ayuda completa"},
+    ])
 
     logger.info("PrecioLuz Bot running")
 

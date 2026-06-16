@@ -18,7 +18,7 @@ from bot.formatter import (
     format_draft_partial,
     _build_notification_keyboard,
 )
-from bot.rich import send_rich_message, send_rich_draft, send_photo
+from bot.rich import send_rich_message, send_rich_draft, send_photo, set_my_commands
 from bot.chart import generate_price_chart
 
 logger = logging.getLogger("bot.handlers")
@@ -97,10 +97,12 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     yesterday_avg = await get_daily_avg(_yesterday_date(target_date))
     full_md = format_rich_message(prices, target_date, yesterday_avg=yesterday_avg)
 
-    # ── Step 4: Send chart image + text ──
+    # ── Step 4: Send chart image then full text ──
     chart_buf = generate_price_chart(prices, target_date)
+    await send_photo(chat_id, chart_buf)
+
     keyboard = _build_notification_keyboard()
-    await send_photo(chat_id, chart_buf, caption=full_md, reply_markup=keyboard)
+    await send_rich_message(chat_id, full_md, reply_markup=keyboard)
 
 
 async def grafico(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -169,8 +171,9 @@ async def _handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             yesterday_avg = await get_daily_avg(_yesterday_date(target_date))
             full_md = format_rich_message(prices, target_date, yesterday_avg=yesterday_avg)
             chart_buf = generate_price_chart(prices, target_date)
+            await send_photo(chat_id, chart_buf)
             keyboard = _build_notification_keyboard()
-            await send_photo(chat_id, chart_buf, caption=full_md, reply_markup=keyboard)
+            await send_rich_message(chat_id, full_md, reply_markup=keyboard)
         else:
             await send_rich_message(chat_id, "## ⚡ Precios de hoy no disponibles")
 
@@ -181,8 +184,9 @@ async def _handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             yesterday_avg = await get_daily_avg(_yesterday_date(target_date))
             full_md = format_rich_message(prices, target_date, yesterday_avg=yesterday_avg)
             chart_buf = generate_price_chart(prices, target_date)
+            await send_photo(chat_id, chart_buf)
             keyboard = _build_notification_keyboard()
-            await send_photo(chat_id, chart_buf, caption=full_md, reply_markup=keyboard)
+            await send_rich_message(chat_id, full_md, reply_markup=keyboard)
         else:
             await send_rich_message(
                 chat_id,

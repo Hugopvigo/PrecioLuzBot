@@ -135,8 +135,7 @@ async def send_photo(
     form.add_field("chat_id", str(chat_id))
     form.add_field("photo", photo, filename="chart.png", content_type="image/png")
     if caption:
-        form.add_field("caption", caption)
-        form.add_field("parse_mode", "Markdown")
+        form.add_field("caption", caption[:1024])
     if reply_markup:
         import json
         form.add_field("reply_markup", json.dumps(reply_markup))
@@ -152,6 +151,19 @@ async def send_photo(
     except Exception:
         logger.exception("Failed calling Telegram sendPhoto")
         return None
+
+
+async def set_my_commands(commands: list[dict]) -> dict | None:
+    """Set the bot's command menu via setMyCommands.
+
+    Args:
+        commands: List of {"command": "...", "description": "..."} dicts.
+
+    Returns:
+        The API response dict, or None on failure.
+    """
+    payload = {"commands": commands}
+    return await _api_call("setMyCommands", payload)
 
 
 async def _api_call(method: str, payload: dict) -> dict | None:

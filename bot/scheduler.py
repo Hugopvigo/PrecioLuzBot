@@ -59,7 +59,8 @@ async def _notify_job(app, attempt: int = 1):
     subscribers = await get_all_subscribers()
     for chat_id, _ in subscribers:
         try:
-            await send_photo(chat_id, chart_buf, caption=markdown, reply_markup=keyboard)
+            await send_photo(chat_id, chart_buf)
+            await send_rich_message(chat_id, markdown, reply_markup=keyboard)
         except Exception as exc:
             error_msg = str(exc).lower()
             if "blocked" in error_msg or "deactivated" in error_msg:
