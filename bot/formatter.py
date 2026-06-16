@@ -28,16 +28,6 @@ _TRAMO_EMOJI = {
     "dear": "🔴",
 }
 
-_SPARKLINE_CHARS = "▁▂▃▄▅▆▇█"
-
-
-def _build_sparkline(prices: list[dict]) -> str:
-    """Build a Unicode sparkline from hourly prices."""
-    vals = [p["price_kwh"] for p in prices]
-    lo, hi = min(vals), max(vals)
-    rng = hi - lo if hi != lo else 1
-    return "".join(_SPARKLINE_CHARS[min(int((v - lo) / rng * 7), 7)] for v in vals)
-
 
 def _build_notification_keyboard() -> dict:
     """Build inline keyboard for notification messages."""
@@ -85,11 +75,6 @@ def format_rich_message(
 
     # ── Header ──
     lines.append(f"## ⚡ Precio de la luz — {day_name} {dt.day} {month_name}")
-    lines.append("")
-
-    # ── Sparkline ──
-    sparkline = _build_sparkline(prices)
-    lines.append(f"**Tendencia:** `{sparkline}`")
     lines.append("")
 
     # ── Resumen ──
