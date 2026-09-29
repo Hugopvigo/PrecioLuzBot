@@ -1,6 +1,7 @@
 services:
   precioluz:
     build: .
+    container_name: precioluz
     env_file: .env
     restart: unless-stopped
     volumes:
