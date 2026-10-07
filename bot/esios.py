@@ -62,6 +62,16 @@ async def fetch_pvpc_prices(date: str) -> list[dict] | None:
                     if resp.status == 200:
                         data = await resp.json()
                         prices = _parse_esios_response(data)
+                        if _is_placeholder_data(prices):
+                            # REE sirve las 24 horas a 0 cuando el día aún no
+                            # está publicado: no cachear ni guardar, tratar
+                            # como no disponible para que actúen los reintentos.
+                            logger.warning(
+                                "ESIOS returned all-zero placeholder data for %s "
+                                "(attempt %d/%d), treating as unpublished",
+                                date, attempt, MAX_RETRIES,
+                            )
+                            return None
                         if prices:
                             set_cached(cache_key, prices)
                             await save_prices(date, prices)
@@ -75,6 +85,15 @@ async def fetch_pvpc_prices(date: str) -> list[dict] | None:
 
     logger.error("All retries exhausted for date %s", date)
     return None
+
+
+def _is_placeholder_data(prices: list[dict]) -> bool:
+    """Detecta el placeholder de REE: las 24 horas exactamente a 0.
+
+    Horas sueltas a 0 (o casi) sí ocurren en el mercado; las 24 a la vez,
+    nunca: significa "día aún no publicado".
+    """
+    return bool(prices) and all(p.get("price_mwh") == 0 for p in prices)
 
 
 def _parse_esios_response(data: dict) -> list[dict]:
