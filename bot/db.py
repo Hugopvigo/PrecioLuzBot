@@ -7,7 +7,17 @@ logger = logging.getLogger("bot.db")
 
 DB_PATH = os.getenv("DB_PATH", "/data/subscribers.db")
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
+
+
+def is_placeholder_day(prices: list[dict]) -> bool:
+    """Detecta el placeholder de REE: todas las horas exactamente a 0.
+
+    Horas sueltas a 0 sí ocurren en el mercado; el día entero a la vez,
+    nunca: significa "día aún no publicado". Sirve tanto para respuestas
+    frescas de la API como para filas ya guardadas (price_mwh 0 == 0.0).
+    """
+    return bool(prices) and all(p.get("price_mwh") == 0 for p in prices)
 
 
 async def _get_connection() -> aiosqlite.Connection:
@@ -81,10 +91,26 @@ async def _migration_3(db: aiosqlite.Connection):
     """)
 
 
+async def _migration_4(db: aiosqlite.Connection):
+    # Limpia placeholders todo-ceros que el código anterior guardó como
+    # precios válidos: días donde TODAS las horas están exactamente a 0
+    # (un día real nunca es todo-ceros) y medias diarias a 0 derivadas
+    # de ellos. Los días con ceros parciales (mercado real) se conservan.
+    await db.execute("""
+        DELETE FROM prices WHERE date IN (
+            SELECT date FROM prices
+            GROUP BY date
+            HAVING SUM(ABS(price_mwh)) = 0
+        )
+    """)
+    await db.execute("DELETE FROM daily_avg WHERE avg_kwh = 0")
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
     3: _migration_3,
+    4: _migration_4,
 }
 
 
@@ -123,6 +149,11 @@ async def get_prices(date: str) -> list[dict] | None:
 
 
 async def save_prices(date: str, prices: list[dict]):
+    if is_placeholder_day(prices):
+        # El placeholder de REE ("día no publicado") no es un precio:
+        # persistirlo envenenaría la DB y se serviría para siempre.
+        logger.warning("Refusing to persist all-zero placeholder for %s", date)
+        return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executemany(
             "INSERT OR REPLACE INTO prices (date, hour, price_kwh, price_mwh) VALUES (?, ?, ?, ?)",

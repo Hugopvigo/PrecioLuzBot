@@ -7,7 +7,7 @@ import aiohttp
 from pytz import timezone as pytz_timezone
 
 from bot.cache import get_cached, set_cached
-from bot.db import get_prices, save_prices
+from bot.db import get_prices, is_placeholder_day, save_prices
 
 logger = logging.getLogger("bot.esios")
 
@@ -23,15 +23,23 @@ async def fetch_pvpc_prices(date: str) -> list[dict] | None:
     # 1. Caché en memoria (evita DB para consultas repetidas en la misma sesión)
     cached = get_cached(cache_key)
     if cached is not None:
-        logger.debug("Cache hit (memory) for %s", cache_key)
-        return cached
+        if is_placeholder_day(cached):
+            logger.warning("Discarding all-zero placeholder from memory cache for %s", date)
+        else:
+            logger.debug("Cache hit (memory) for %s", cache_key)
+            return cached
 
     # 2. Base de datos local (cumplimiento REE: una sola llamada por día)
     stored = await get_prices(date)
     if stored:
-        logger.debug("Cache hit (db) for %s", cache_key)
-        set_cached(cache_key, stored)
-        return stored
+        if is_placeholder_day(stored):
+            # Filas envenenadas por el código anterior al guard: no servir,
+            # seguir a la API para traer el día real en cuanto se publique.
+            logger.warning("Discarding all-zero placeholder stored in db for %s", date)
+        else:
+            logger.debug("Cache hit (db) for %s", cache_key)
+            set_cached(cache_key, stored)
+            return stored
 
     token = os.getenv("ESIOS_API_TOKEN")
     if not token:
@@ -62,16 +70,19 @@ async def fetch_pvpc_prices(date: str) -> list[dict] | None:
                     if resp.status == 200:
                         data = await resp.json()
                         prices = _parse_esios_response(data)
-                        if _is_placeholder_data(prices):
+                        if is_placeholder_day(prices):
                             # REE sirve las 24 horas a 0 cuando el día aún no
-                            # está publicado: no cachear ni guardar, tratar
-                            # como no disponible para que actúen los reintentos.
+                            # está publicado: no cachear ni guardar, reintentar
+                            # dentro de este ciclo y luego dejar que actúen los
+                            # reintentos del scheduler.
                             logger.warning(
                                 "ESIOS returned all-zero placeholder data for %s "
                                 "(attempt %d/%d), treating as unpublished",
                                 date, attempt, MAX_RETRIES,
                             )
-                            return None
+                            if attempt < MAX_RETRIES:
+                                await asyncio.sleep(RETRY_DELAY)
+                            continue
                         if prices:
                             set_cached(cache_key, prices)
                             await save_prices(date, prices)
@@ -85,15 +96,6 @@ async def fetch_pvpc_prices(date: str) -> list[dict] | None:
 
     logger.error("All retries exhausted for date %s", date)
     return None
-
-
-def _is_placeholder_data(prices: list[dict]) -> bool:
-    """Detecta el placeholder de REE: las 24 horas exactamente a 0.
-
-    Horas sueltas a 0 (o casi) sí ocurren en el mercado; las 24 a la vez,
-    nunca: significa "día aún no publicado".
-    """
-    return bool(prices) and all(p.get("price_mwh") == 0 for p in prices)
 
 
 def _parse_esios_response(data: dict) -> list[dict]:
