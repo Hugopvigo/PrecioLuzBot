@@ -18,6 +18,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     stream=sys.stdout,
 )
+# httpx registra la URL de cada petición, y la de Telegram lleva el token del bot
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger("bot.main")
 
