@@ -33,27 +33,12 @@ def _assert_v2_clean(testcase, text):
     stripped = re.sub(r"\*[^*\n]+\*", "", text)
     stripped = re.sub(r"_[^_\n]+_", "", stripped)
     stripped = re.sub(r"`[^`\n]+`", "", stripped)
-    # Anything reserved left must carry a backslash escape.
-    for match in re.finditer(r"[_*\[\]()~`>#+\-=|{}.!\\]", stripped):
-        pos = match.start()
-        backslashes = 0
-        i = pos - 1
-        while i >= 0 and stripped[i] == "\\":
-            backslashes += 1
-            i -= 1
-        testcase.assertEqual(
-            backslashes % 2, 1,
-            f"unescaped {match.group()!r} in: {text!r}",
-        )
-
-
-class FakePost:
-    def __init__(self):
-        self.calls = 0
-
-    async def __call__(self, url, data=None, timeout=None):
-        self.calls += 1
-        return FakeResponse()
+    # Remove valid backslash escapes ("\-", "\.", ...).
+    stripped = re.sub(r"\\.", "", stripped)
+    # No reserved char may remain.
+    leftover = re.search(r"[_*\[\]()~`>#+\-=|{}.!\\]", stripped)
+    if leftover is not None:
+        testcase.fail(f"unescaped {leftover.group()!r} in: {text!r}")
 
 
 class FakeResponse:
@@ -68,8 +53,6 @@ class FakeResponse:
 
 
 class FakeSession:
-    poster = FakePost()
-
     def __init__(self, *args, **kwargs):
         pass
 
@@ -80,7 +63,8 @@ class FakeSession:
         return False
 
     def post(self, url, data=None, timeout=None):
-        return self.poster(url, data=data, timeout=timeout)
+        # Like aiohttp's real post(): returns an async context manager.
+        return FakeResponse()
 
 
 def _run(coro):
@@ -144,20 +128,40 @@ class BlockedResponseTest(unittest.TestCase):
 
 
 class SendPhotoTest(unittest.TestCase):
-    def test_rewinds_shared_buffer(self):
-        """Same BytesIO for N subscribers: the 2nd..Nth upload must be full.
+    def test_shared_buffer_reaches_transport_full(self):
+        """Same BytesIO for N subscribers: every upload must be full.
 
         aiohttp reads the stream from its current position, so send_photo
         must rewind before every upload (nightly bug: 8/9 photos empty).
         """
+        import aiohttp
+
         os.environ["TELEGRAM_BOT_TOKEN"] = "test-token"
-        buf = io.BytesIO(b"PNGDATA" * 1000)
-        buf.read()  # simulate a previous subscriber's upload consuming it
-        self.assertNotEqual(buf.tell(), 0)
-        with patch("aiohttp.ClientSession", FakeSession):
-            _run(send_photo(123, buf))
-        # Rewound before the HTTP layer read it.
-        self.assertEqual(buf.tell(), 0)
+        payload = b"PNGDATA" * 1000
+        buf = io.BytesIO(payload)
+
+        handed_over = []
+        real_add_field = aiohttp.FormData.add_field
+
+        def spy_add_field(self, name, value, **kwargs):
+            if name == "photo":
+                # What the transport layer would upload from this position.
+                handed_over.append(value.read())
+            return real_add_field(self, name, value, **kwargs)
+
+        async def two_sends():
+            with patch("aiohttp.ClientSession", FakeSession):
+                with patch.object(
+                    aiohttp.FormData, "add_field", spy_add_field
+                ):
+                    await send_photo(123, buf)
+                    buf.read()  # simulate aiohttp consuming the 1st upload
+                    await send_photo(456, buf)
+
+        _run(two_sends())
+        self.assertEqual(len(handed_over), 2)
+        for upload in handed_over:
+            self.assertEqual(upload, payload)
 
 
 if __name__ == "__main__":
