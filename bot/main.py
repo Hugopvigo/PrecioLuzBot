@@ -5,7 +5,7 @@ import signal
 import sys
 
 from telegram.error import NetworkError, TimedOut
-from telegram.ext import ApplicationBuilder
+from telegram.ext import ApplicationBuilder, ContextTypes
 from telegram.request import HTTPXRequest
 
 from bot.scheduler import setup_scheduler
@@ -22,6 +22,23 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger("bot.main")
+
+
+async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Registra los errores de los handlers.
+
+    Los fallos transitorios de red (Bad Gateway nocturnos de Telegram)
+    se dejan en WARNING sin traceback; el resto se registra con traza.
+    """
+    err = context.error
+    if isinstance(err, (NetworkError, TimedOut)):
+        logger.warning("Telegram polling error (transient): %s", err)
+        return
+    logger.error(
+        "Unhandled update error: %s",
+        err,
+        exc_info=err if isinstance(err, BaseException) else None,
+    )
 
 
 async def main():
@@ -41,6 +58,7 @@ async def main():
     request = HTTPXRequest(connect_timeout=20, read_timeout=20, write_timeout=20)
     app = ApplicationBuilder().token(token).request(request).build()
     register_handlers(app)
+    app.add_error_handler(_error_handler)
 
     scheduler = setup_scheduler(app)
     scheduler.start()

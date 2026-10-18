@@ -7,8 +7,8 @@ from pytz import timezone
 
 from bot.esios import fetch_pvpc_prices
 from bot.formatter import format_rich_message, _build_notification_keyboard
-from bot.db import get_all_subscribers, save_daily_avg
-from bot.rich import send_rich_message, send_photo
+from bot.db import get_all_subscribers, remove_subscriber, save_daily_avg
+from bot.rich import is_blocked_response, send_rich_message, send_photo
 from bot.chart import generate_price_chart
 
 logger = logging.getLogger("bot.scheduler")
@@ -59,16 +59,22 @@ async def _notify_job(app, attempt: int = 1):
     subscribers = await get_all_subscribers()
     for chat_id, _ in subscribers:
         try:
-            await send_photo(chat_id, chart_buf)
-            await send_rich_message(chat_id, markdown, reply_markup=keyboard)
-        except Exception as exc:
-            error_msg = str(exc).lower()
-            if "blocked" in error_msg or "deactivated" in error_msg:
+            photo_res = await send_photo(chat_id, chart_buf)
+            if is_blocked_response(photo_res):
                 logger.info("Removing blocked subscriber %s", chat_id)
-                from bot.db import remove_subscriber
                 await remove_subscriber(chat_id)
-            else:
-                logger.exception("Failed to send to %s", chat_id)
+                continue
+            if photo_res is None or not photo_res.get("ok"):
+                logger.warning("Photo send failed for %s (transient), message still sent", chat_id)
+
+            msg_res = await send_rich_message(chat_id, markdown, reply_markup=keyboard)
+            if is_blocked_response(msg_res):
+                logger.info("Removing blocked subscriber %s", chat_id)
+                await remove_subscriber(chat_id)
+            elif msg_res is None or not msg_res.get("ok"):
+                logger.warning("Message send failed for %s (transient)", chat_id)
+        except Exception:
+            logger.exception("Failed to send to %s", chat_id)
 
 
 async def _get_yesterday_avg(date_str: str) -> float | None:

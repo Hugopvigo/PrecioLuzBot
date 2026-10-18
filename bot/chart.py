@@ -60,15 +60,26 @@ def generate_price_chart(prices: list[dict], date_str: str) -> io.BytesIO:
     ax.text(23.5, avg, f" media\n {avg:.4f}", color="#94a3b8", fontsize=7,
             va="bottom", ha="right", fontweight="bold")
 
+    # Marcadores geométricos (estrella / X) en vez de emojis: la fuente
+    # DejaVu Sans no trae 💰💀 y salían huecos en el PNG.
     cheapest_3 = {p["hour"] for p in sorted_by_price[:3]}
     dearest_3 = {p["hour"] for p in sorted_by_price[-3:]}
+    lift = (max(price_vals) - min(price_vals) or max(price_vals) or 1) * 0.03
+    cheap_x, cheap_y, dear_x, dear_y = [], [], [], []
     for bar_obj, h, pv in zip(bars, hours, price_vals):
+        cx = bar_obj.get_x() + bar_obj.get_width() / 2
         if h in cheapest_3:
-            ax.text(bar_obj.get_x() + bar_obj.get_width() / 2, pv,
-                    "💰", ha="center", va="bottom", fontsize=7, zorder=4)
+            cheap_x.append(cx)
+            cheap_y.append(pv + lift)
         elif h in dearest_3:
-            ax.text(bar_obj.get_x() + bar_obj.get_width() / 2, pv,
-                    "💀", ha="center", va="bottom", fontsize=7, zorder=4)
+            dear_x.append(cx)
+            dear_y.append(pv + lift)
+    if cheap_x:
+        ax.scatter(cheap_x, cheap_y, marker="*", s=110, color="#fde047",
+                   edgecolors="#713f12", linewidths=0.8, zorder=5)
+    if dear_x:
+        ax.scatter(dear_x, dear_y, marker="X", s=70, color="#f8fafc",
+                   linewidths=1.6, zorder=5)
 
     ax.set_xlim(-0.6, 23.6)
     ax.set_xticks(range(0, 24, 2))
@@ -84,6 +95,17 @@ def generate_price_chart(prices: list[dict], date_str: str) -> io.BytesIO:
     ax.set_title(f"⚡ Precios PVPC — {day_name} {dt.day}/{dt.month:02d}",
                  color="white", fontsize=13, fontweight="bold", pad=12)
     ax.set_ylabel("€/kWh", color="#94a3b8", fontsize=9)
+
+    from matplotlib.lines import Line2D
+    ax.legend(
+        handles=[
+            Line2D([0], [0], marker="*", color="w", markerfacecolor="#fde047",
+                   markeredgecolor="#713f12", markersize=10, label="3 más baratas"),
+            Line2D([0], [0], marker="X", color="#f8fafc", markersize=8, label="3 más caras"),
+        ],
+        facecolor="#1a1a2e", edgecolor="#334155", labelcolor="#cbd5e1",
+        fontsize=7, loc="upper left",
+    )
 
     plt.tight_layout()
 
