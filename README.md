@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/capturas/00-cabecera.png" alt="PrecioLuz Bot — los precios de la luz en Telegram" width="100%">
+  <img src="cabecera.png" alt="PrecioLuz Bot — los precios de la luz en Telegram" width="100%">
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@ un `docker compose up -d`.
 ## El aviso
 
 <p align="center">
-  <img src="docs/capturas/01-bot.jpg" alt="Mensaje del bot con el resumen y el gráfico de precios" width="360">
+  <img src="bot.jpg" alt="Mensaje del bot con el resumen y el gráfico de precios" width="360">
 </p>
 
 El mensaje lleva el resumen (más barata, más cara y media del día, con la
@@ -140,7 +140,8 @@ precioluzbot/
 │   └── rich.py       cliente de la API de Telegram
 ├── tests/            tests de regresión
 ├── src/              captura del bot
-├── docs/capturas/    cabecera e imágenes del README
+├── cabecera.png       cabecera del README
+├── bot.jpg            captura del bot
 ├── install.txt       guía de instalación en VPS
 ├── Dockerfile
 └── docker-compose.yml
