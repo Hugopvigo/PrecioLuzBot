@@ -1,3 +1,8 @@
+<meta property="og:title" content="PRECIOLUZBOT">
+<meta property="og:description" content="Un bot de Telegram con los precios de la luz de España.">
+<meta property="og:image" content="https://raw.githubusercontent.com/Hugopvigo/PrecioLuzBot/main/og.png">
+
+
 <p align="center">
   <img src="cabecera.png" alt="PrecioLuz Bot — los precios de la luz en Telegram" width="100%">
 </p>
